@@ -1,41 +1,75 @@
 import sys
-import re
+
+if (len(sys.argv) < 6):
+	raise ValueError('python arff2libsvm.py [inputfile] [outputfile] [num_nominal] [num_numeric] [num_labels]')
+	
 
 fin = open(sys.argv[1], 'r')
 
-fout = open(sys.argv[2], 'w')
+fout = open(sys.argv[2], 'a')
+
+enum = int(sys.argv[3])
+numeric = int(sys.argv[4])
+num_fea = enum + numeric
+num_labels = int(sys.argv[5])
 
 reading_data = False
 
 features = []
 labels = []
-num_fea = 0
-num_labels = 0
 
 line_num = 0
+meet_first_label = False
 for line in fin.readlines():
 	line_num += 1
+	#print line
 	if len(line) < 2:
 		continue
-
 	if not reading_data:
 		if line.startswith('@relation'):
 			continue
+		
 		if line.startswith('@data'):
 			reading_data = True
-			num_fea = len(features)
-			num_labels = len(labels)
-		elif line.startswith('@attribute'):
+			if len(features) != num_fea:
+				raise ValueError('incompatible feature size, get ' + str(len(features)) + ', should be ' + str(num_fea) )
+			if len(labels) != num_labels:
+				raise ValueError('incompatible label size, get ' + str(len(labels)) + ', should be ' + str(num_labels) )
+			continue
+		
+		if line.startswith('@attribute'):
 			tokens = line.split(' ')
-			if len(tokens) > 2:
-				if tokens[2].startswith('{0,1}'):
-					#should be a label
-					labels.append(tokens[1])
-				elif tokens[2].startswith('numeric'): 
-					#should be a feature
-					features.append(tokens[1])
+			if len(tokens) != 3:
+				raise ValueError('Wrong number of attribute at line '+str(line_num))		
+			if tokens[1].startswith('tag_') or tokens[1].startswith('TAG_'):
+				#should be a label
+				meet_first_label = True
+				if (enum != 0) or (numeric != 0):
+					raise ValueError('need ' + str(enum) + 'more nominal and ' + str(numeric) + ' numeric features')
+				if len(features) != num_fea:
+					raise ValueError('incompatible feature size, get ' + str(len(features)) + ', should be ' + str(num_fea) )
+				labels.append(tokens[1])
 			else:
-				raise ValueError('Wrong attribute at line '+str(line_num))
+				if len(features) < num_fea:
+					#should be a feature
+					if (meet_first_label):
+						raise ValueError('Feature after label at line '+str(line_num))	
+					if tokens[2].startswith('{0,1}'):
+						enum -= 1
+					elif tokens[2].startswith('numeric'):
+						numeric -= 1
+					else:
+						raise ValueError('Feature of unknown type at line '+str(line_num))
+					features.append(tokens[1])
+				else:
+					#should be a label
+					if tokens[1].startswith('{0,1}'):
+						meet_first_label = True
+						if (enum != 0) or (numeric != 0):
+							raise ValueError('need ' + str(enum) + 'more nominal and ' + str(numeric) + ' numeric features')
+						labels.append(tokens[1])
+					else:
+						raise ValueError('Unknown label type at line ' + str(line_num))
 		else:
 			raise ValueError('Wrong Input Format at line '+str(line_num))
 	else:
@@ -58,11 +92,11 @@ for line in fin.readlines():
 			if coor < num_fea:
 				found_feature = True
 				# this is a feature
-				output_line = output_line + ' ' + str(coor) + ':' + str(val)
+				output_line = output_line + ' ' + features[coor] + ':' + str(val)
 			elif coor < num_fea + num_labels:
 				# this is a label
 				if found_label:
-					output_line = ', ' + output_line
+					output_line = ',' + output_line
 				output_line = labels[coor - num_fea] + output_line
 				found_label = True
 			else:
